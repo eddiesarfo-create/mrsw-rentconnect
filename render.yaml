@@ -1,0 +1,39 @@
+# Render Blueprint — deploys the whole app as ONE web service.
+# The FastAPI service serves both the REST API and the bundled frontend
+# (static/index.html) from the same origin, so there's no CORS setup and
+# nothing to point the frontend at.
+#
+# How to use (all in the browser — see DEPLOY.md):
+#   1. Put this repo on GitHub (web upload is fine).
+#   2. Create a free Postgres on Neon, copy its connection string.
+#   3. Render Dashboard -> New -> Blueprint -> pick this repo -> paste the
+#      DATABASE_URL when prompted -> Apply. Render builds and runs it.
+#
+# Render runs the build/start commands on ITS servers — never on your machine.
+
+services:
+  - type: web
+    name: mrsw-rentconnect
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      # Paste your Postgres connection string when prompted during blueprint setup.
+      # Neon's free tier is permanent; Render's own free Postgres deletes itself
+      # after 30 days, so Neon is the better home for anything you want to keep.
+      - key: DATABASE_URL
+        sync: false
+      # Render generates a strong random secret for signing JWTs.
+      - key: SECRET_KEY
+        generateValue: true
+      # Seed the demo data (Ama, Kwame, the wallet) on first boot — no shell needed.
+      - key: SEED_ON_START
+        value: "true"
+      - key: AUTO_CREATE_TABLES
+        value: "true"
+      # Frontend is same-origin, so CORS isn't needed. "*" is harmless and lets you
+      # also point a separately-hosted frontend at this API if you ever want to.
+      - key: CORS_ORIGINS
+        value: "*"

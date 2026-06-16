@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MRSW RentConnect — Live</title>
+<!--
+  MRSW RentConnect — end-to-end slice (login -> wallet -> readiness), live against the FastAPI backend.
+
+  RUN IT LOCALLY (do not rely on a preview inside Claude — that sandbox can't reach your localhost):
+    1. Start the backend:   uvicorn app.main:app --reload   (and `python -m app.seed` once)
+    2. Serve this folder:   python -m http.server 5500
+    3. Open:                http://localhost:5500
+    4. Sign in:             ama@example.com / password123   (the seeded tenant)
+
+  Both pages run on http://localhost, so there's no mixed-content or CORS problem
+  (the backend already allows all origins in dev). If your API runs elsewhere,
+  change the base URL on the sign-in screen.
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+
+  :root{
+    --ink:#1B1410; --muted:#6F6557; --line:#E7E1D3; --sand:#FAF7EF; --surface:#FFFFFF;
+    --green:#0F4D38; --green2:#1F7A5C; --gold:#B68A2E;
+    /* status */
+    --s-green-fg:#15604A; --s-green-bg:#E7F0EA;
+    --s-amber-fg:#8A6B12; --s-amber-bg:#F6EED6;
+    --s-orange-fg:#A6502A; --s-orange-bg:#F5E5D8;
+    --s-red-fg:#9E3636;   --s-red-bg:#F5E0E0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:'Plus Jakarta Sans',system-ui,sans-serif; color:var(--ink);
+    background:var(--sand); line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .disp{font-family:'Bricolage Grotesque',serif}
+  .mono{font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)}
+  .gold{color:var(--gold)}
+  a{color:var(--green)}
+
+  .wrap{max-width:1000px; margin:0 auto; padding:0 20px}
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:16px}
+  .shadow{box-shadow:0 18px 40px -28px rgba(27,20,16,.45)}
+  .row{display:flex; align-items:center}
+  .btn{
+    font:inherit; font-weight:700; cursor:pointer; border-radius:11px; padding:11px 16px;
+    border:1px solid transparent; display:inline-flex; align-items:center; gap:8px; transition:.15s;
+  }
+  .btn:focus-visible{outline:3px solid rgba(15,77,56,.35); outline-offset:2px}
+  .btn-primary{background:var(--green); color:#fff}
+  .btn-primary:hover{background:#0c3f2e}
+  .btn-primary:disabled{opacity:.5; cursor:not-allowed}
+  .btn-ghost{background:#fff; color:var(--ink); border-color:var(--line)}
+  .btn-ghost:hover{background:#FBF9F3}
+  .input{
+    width:100%; font:inherit; padding:11px 13px; border:1px solid var(--line);
+    border-radius:11px; background:#fff; color:var(--ink);
+  }
+  .input:focus{outline:none; border-color:var(--green2); box-shadow:0 0 0 3px rgba(31,122,92,.12)}
+  .label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:6px}
+  .pill{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:4px 10px; border-radius:999px}
+
+  /* ---- top bar ---- */
+  header.bar{position:sticky; top:0; z-index:10; background:rgba(250,247,239,.9); backdrop-filter:blur(10px); border-bottom:1px solid var(--line)}
+  .bar-in{max-width:1000px; margin:0 auto; padding:13px 20px; display:flex; align-items:center; justify-content:space-between; gap:12px}
+  .logo{width:32px; height:32px; border-radius:9px; background:var(--green); display:flex; align-items:center; justify-content:center; flex-shrink:0}
+  .logo span{color:#fff; font-weight:800; font-size:15px}
+  .api-tag{font-size:11px; color:var(--muted); display:flex; align-items:center; gap:6px}
+  .dot{width:7px; height:7px; border-radius:999px; background:#C9C2B2}
+  .dot.on{background:var(--green2)}
+
+  /* ---- sign in ---- */
+  .signin{min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:24px}
+  .signin .card{width:100%; max-width:400px; padding:26px}
+  .seed-note{font-size:12px; background:#F4F1E8; border:1px solid var(--line); border-radius:10px; padding:9px 11px; color:var(--muted)}
+  .seed-note b{color:var(--ink)}
+  .api-edit{margin-top:14px; font-size:12px}
+  .api-edit input{font-size:12px; padding:7px 9px}
+
+  /* ---- banners ---- */
+  .banner{border-radius:12px; padding:11px 14px; font-size:13.5px; display:flex; gap:10px; align-items:flex-start}
+  .banner.err{background:var(--s-red-bg); color:var(--s-red-fg)}
+  .banner.info{background:var(--s-amber-bg); color:var(--s-amber-fg)}
+
+  /* ---- dashboard grid ---- */
+  .grid{display:grid; gap:16px}
+  @media(min-width:760px){ .hero-grid{grid-template-columns:240px 1fr} }
+
+  /* ---- readiness meter (signature) ---- */
+  .meter-shell{display:flex; gap:18px; align-items:stretch}
+  .meter{position:relative; width:108px; flex-shrink:0}
+  .vessel{position:absolute; inset:0; border:2px solid var(--line); border-radius:18px; background:#fff; overflow:hidden}
+  .fill{position:absolute; inset:0; display:flex; flex-direction:column-reverse}
+  .seg{width:100%; transition:height .8s cubic-bezier(.22,1,.36,1)}
+  .target{position:absolute; left:-7px; right:-7px; top:0; border-top:2px dashed var(--gold)}
+  .target b{position:absolute; right:0; top:-18px; font-size:10px; font-weight:700; color:var(--gold); white-space:nowrap}
+  .meter-side{display:flex; flex-direction:column; justify-content:center; gap:4px}
+
+  /* ---- buckets ---- */
+  .bucket{display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-top:1px solid var(--line)}
+  .bucket:first-child{border-top:none}
+  .swatch{width:11px; height:11px; border-radius:3px; flex-shrink:0}
+
+  /* ---- trust ---- */
+  .factor{display:grid; grid-template-columns:1fr auto; gap:4px 12px; align-items:center; padding:6px 0}
+  .meterbar{grid-column:1 / -1; height:7px; border-radius:999px; background:#EFEADE; overflow:hidden}
+  .meterbar > span{display:block; height:100%; background:var(--green2); border-radius:999px}
+
+  /* ---- ledger ---- */
+  table{width:100%; border-collapse:collapse}
+  th{font-size:12px; font-weight:600; color:var(--muted); text-align:left; padding:9px 10px}
+  td{padding:11px 10px; border-top:1px solid var(--line); font-size:13.5px}
+
+  .skeleton{background:linear-gradient(90deg,#F0ECE1,#F7F4EC,#F0ECE1); background-size:200% 100%; animation:sk 1.2s infinite; border-radius:8px}
+  @keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important; transition:none !important} }
+  .sr{display:flex; align-items:center; justify-content:center; min-height:40dvh; color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ============================================================ config + API client
+   This block is the reusable piece — drop it into the React app almost verbatim. */
+
+const DEFAULT_API = "http://localhost:8000";
+const API_BASE = () => {
+  const saved = sessionStorage.getItem("mrsw_api");
+  if (saved) return saved;                          // explicit override from the sign-in field
+  // When the page is served over http(s) — the backend serves it, or it's deployed —
+  // call the same origin. Only fall back to localhost when opened directly as a file://.
+  if (location.protocol === "http:" || location.protocol === "https:") return location.origin;
+  return DEFAULT_API;
+};
+
+const Token = {
+  get:  () => sessionStorage.getItem("mrsw_token"),
+  set:  (t) => t ? sessionStorage.setItem("mrsw_token", t) : sessionStorage.removeItem("mrsw_token"),
+  clear:() => sessionStorage.removeItem("mrsw_token"),
+};
+
+async function api(path, { method = "GET", body, auth = true } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (auth && Token.get()) headers.Authorization = "Bearer " + Token.get();
+
+  let res;
+  try {
+    res = await fetch(API_BASE() + path, {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw { kind: "network", message: `Can't reach the API at ${API_BASE()}. Start the backend (uvicorn app.main:app) and try again.` };
+  }
+  if (res.status === 401) { Token.clear(); throw { kind: "auth", message: "Your session ended. Sign in again." }; }
+  if (!res.ok) {
+    let detail;
+    try { detail = (await res.json()).detail; } catch {}
+    throw { kind: "http", status: res.status, message: detail || `Request failed (${res.status}).` };
+  }
+  return res.json();
+}
+
+const Api = {
+  login:        (email, password) => api("/auth/login", { method: "POST", auth: false, body: { email, password } }),
+  me:           () => api("/auth/me"),
+  tenant:       () => api("/tenants/me"),
+  wallet:       () => api("/wallet"),
+  transactions: () => api("/wallet/transactions"),
+};
+
+/* ============================================================ presentation data */
+
+const BUCKETS = [
+  { key: "stability_reserve",   label: "Stability Reserve",   color: "#0F4D38" },
+  { key: "housing_savings",     label: "Housing Savings",     color: "#1F7A5C" },
+  { key: "property_protection", label: "Property Protection", color: "#3E8E6F" },
+  { key: "emergency_support",   label: "Emergency Support",   color: "#7FB39A" },
+  { key: "ownership_fund",      label: "Ownership Fund",       color: "#B68A2E" },
+];
+
+const FACTOR_LABELS = {
+  contribution_consistency: "Contribution consistency",
+  rent_payment_history:     "Rent payment history",
+  failed_deductions:        "Successful deductions",
+  wallet_growth:            "Wallet growth",
+  maintenance_behavior:     "Maintenance behaviour",
+  landlord_review:          "Landlord review",
+  dispute_history:          "Dispute history",
+  guarantor_strength:       "Guarantor strength",
+};
+
+const LEVEL = {
+  green:  { fg: "var(--s-green-fg)",  bg: "var(--s-green-bg)",  label: "On track" },
+  yellow: { fg: "var(--s-amber-fg)",  bg: "var(--s-amber-bg)",  label: "Watch" },
+  orange: { fg: "var(--s-orange-fg)", bg: "var(--s-orange-bg)", label: "Elevated" },
+  red:    { fg: "var(--s-red-fg)",    bg: "var(--s-red-bg)",    label: "Distressed" },
+};
+
+const ghs = (n) => "GHS " + Math.round(Number(n) || 0).toLocaleString("en-US");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ============================================================ state + render */
+
+const root = document.getElementById("root");
+let state = { view: "boot", user: null, wallet: null, trust: null, readiness: null, txns: [], error: null };
+
+function set(patch) { state = { ...state, ...patch }; render(); }
+
+function render() {
+  if (state.view === "boot")    return renderBoot();
+  if (state.view === "signin")  return renderSignin();
+  if (state.view === "loading") return renderLoading();
+  if (state.view === "dash")    return renderDash();
+  if (state.view === "nontenant") return renderNonTenant();
+}
+
+function topbar(connected) {
+  return `
+    <header class="bar"><div class="bar-in">
+      <div class="row" style="gap:10px">
+        <div class="logo"><span class="disp">M</span></div>
+        <div>
+          <div class="disp" style="font-weight:800; font-size:15px; line-height:1">MRSW <span class="gold">RentConnect</span></div>
+          <div class="muted" style="font-size:10.5px; font-weight:600; letter-spacing:.04em">LIVE · TENANT VIEW</div>
+        </div>
+      </div>
+      <div class="row" style="gap:14px">
+        <span class="api-tag"><span class="dot ${connected ? "on" : ""}"></span>${esc(API_BASE())}</span>
+        <button class="btn btn-ghost" id="logout" style="padding:8px 12px">Sign out</button>
+      </div>
+    </div></header>`;
+}
+
+function renderBoot() {
+  root.innerHTML = `<div class="sr">Loading…</div>`;
+  // try to resume a session
+  if (Token.get()) loadDashboard();
+  else set({ view: "signin" });
+}
+
+function renderSignin() {
+  root.innerHTML = `
+    <div class="signin"><div class="card shadow">
+      <div class="row" style="gap:10px; margin-bottom:18px">
+        <div class="logo"><span class="disp">M</span></div>
+        <div class="disp" style="font-weight:800; font-size:18px">MRSW <span class="gold">RentConnect</span></div>
+      </div>
+      <h1 class="disp" style="font-size:22px; font-weight:800; margin:0 0 2px">Sign in</h1>
+      <p class="muted" style="font-size:13px; margin:0 0 16px">Live tenant view of your rent readiness.</p>
+
+      <div id="formErr"></div>
+
+      <label class="label" for="email">Email</label>
+      <input class="input" id="email" type="email" value="ama@example.com" autocomplete="username" />
+      <div style="height:12px"></div>
+      <label class="label" for="password">Password</label>
+      <input class="input" id="password" type="password" value="password123" autocomplete="current-password" />
+
+      <div style="height:18px"></div>
+      <button class="btn btn-primary" id="signin" style="width:100%; justify-content:center">Sign in</button>
+
+      <div style="height:14px"></div>
+      <div class="seed-note">Seeded tenant: <b>ama@example.com</b> · <b>password123</b></div>
+
+      <div class="api-edit">
+        <label class="label" for="api" style="margin-top:6px">API base URL</label>
+        <input class="input" id="api" value="${esc(API_BASE())}" />
+      </div>
+    </div></div>`;
+
+  const emailEl = document.getElementById("email");
+  const pwEl = document.getElementById("password");
+  const apiEl = document.getElementById("api");
+  const btn = document.getElementById("signin");
+
+  const submit = async () => {
+    sessionStorage.setItem("mrsw_api", apiEl.value.trim().replace(/\/$/, "") || DEFAULT_API);
+    btn.disabled = true; btn.textContent = "Signing in…";
+    document.getElementById("formErr").innerHTML = "";
+    try {
+      const res = await Api.login(emailEl.value.trim(), pwEl.value);
+      Token.set(res.access_token);
+      await loadDashboard(res.user);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Sign in";
+      document.getElementById("formErr").innerHTML =
+        `<div class="banner err" style="margin-bottom:14px"><span>${esc(e.message)}</span></div>`;
+    }
+  };
+
+  btn.onclick = submit;
+  [emailEl, pwEl, apiEl].forEach((el) => el.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submit(); }));
+}
+
+function renderLoading() {
+  root.innerHTML = topbar(true) + `
+    <div class="wrap" style="padding-top:22px; padding-bottom:40px">
+      <div class="grid hero-grid">
+        <div class="card shadow" style="padding:20px"><div class="skeleton" style="height:280px"></div></div>
+        <div class="card shadow" style="padding:20px"><div class="skeleton" style="height:280px"></div></div>
+      </div>
+    </div>`;
+  bindLogout();
+}
+
+function renderNonTenant() {
+  root.innerHTML = topbar(true) + `
+    <div class="wrap" style="padding-top:22px">
+      <div class="banner info"><span>Signed in as <b>${esc(state.user?.role || "user")}</b>. This slice shows the <b>tenant</b> dashboard — sign in as <b>ama@example.com / password123</b> to see live wallet and readiness data.</span></div>
+    </div>`;
+  bindLogout();
+}
+
+function renderDash() {
+  const w = state.wallet, r = state.readiness, t = state.trust;
+  const lvl = LEVEL[r.level] || LEVEL.yellow;
+  const target = w.target_amount || 0;
+  const due = r.days_remaining;
+
+  // meter segments: each bucket's height as a % of the target (so the fill height = readiness %)
+  const segs = BUCKETS.map((b) => {
+    const amt = w[b.key] || 0;
+    const h = target > 0 ? Math.min(100, (amt / target) * 100) : 0;
+    return `<div class="seg" style="height:${h}%; background:${b.color}"></div>`;
+  }).join("");
+
+  const bucketRows = BUCKETS.map((b) => `
+    <div class="bucket">
+      <div class="row" style="gap:9px"><span class="swatch" style="background:${b.color}"></span><span style="font-size:13.5px; font-weight:600">${b.label}</span></div>
+      <span class="mono" style="font-size:13px; font-weight:600">${ghs(w[b.key])}</span>
+    </div>`).join("");
+
+  const factorRows = Object.keys(FACTOR_LABELS).map((k) => {
+    const v = Math.max(0, Math.min(100, Number(t.factors?.[k] ?? 0)));
+    return `
+      <div class="factor">
+        <span style="font-size:12.5px">${FACTOR_LABELS[k]}</span>
+        <span class="mono muted" style="font-size:12px">${Math.round(v)}</span>
+        <span class="meterbar"><span style="width:${v}%"></span></span>
+      </div>`;
+  }).join("");
+
+  const txnRows = (state.txns || []).slice(0, 8).map((x) => {
+    const b = BUCKETS.find((bb) => bb.key === x.bucket);
+    const failed = x.status === "failed";
+    return `
+      <tr>
+        <td><div class="row" style="gap:8px"><span class="swatch" style="background:${b ? b.color : "#ccc"}"></span>${esc(b ? b.label : x.bucket)}</div></td>
+        <td class="muted">${esc(x.method || "—")}</td>
+        <td><span class="pill" style="color:${failed ? "var(--s-red-fg)" : "var(--s-green-fg)"}; background:${failed ? "var(--s-red-bg)" : "var(--s-green-bg)"}">${failed ? "Failed" : "Success"}</span></td>
+        <td class="mono" style="text-align:right; font-weight:600">${ghs(x.amount)}</td>
+      </tr>`;
+  }).join("") || `<tr><td colspan="4" class="muted" style="text-align:center; padding:20px">No transactions yet.</td></tr>`;
+
+  root.innerHTML = topbar(true) + `
+    <div class="wrap" style="padding-top:22px; padding-bottom:48px">
+      <div style="margin-bottom:16px">
+        <div class="muted" style="font-size:13px; font-weight:600">Welcome back</div>
+        <h1 class="disp" style="font-size:27px; font-weight:800; margin:2px 0 0">${esc(state.user?.full_name || "Tenant")}</h1>
+      </div>
+
+      <div class="grid hero-grid">
+        <!-- signature: the live reserve meter -->
+        <div class="card shadow" style="padding:20px">
+          <div class="muted" style="font-size:12.5px; font-weight:600; margin-bottom:14px">Rent Readiness Reserve</div>
+          <div class="meter-shell">
+            <div class="meter" style="height:280px">
+              <div class="vessel"><div class="fill">${segs}</div></div>
+              <div class="target"><b>Target ${ghs(target)}</b></div>
+            </div>
+            <div class="meter-side">
+              <div class="disp" style="font-size:44px; font-weight:800; line-height:1; color:var(--green)">${r.readiness_pct}%</div>
+              <span class="pill" style="color:${lvl.fg}; background:${lvl.bg}; align-self:flex-start; margin:6px 0 2px">${lvl.label}</span>
+              <div class="muted" style="font-size:12.5px">${ghs(w.total)} reserved</div>
+              ${due != null ? `<div class="muted" style="font-size:12.5px">Advance due in <b style="color:var(--ink)">${due} days</b></div>` : ""}
+              ${r.shortfall > 0 ? `<div class="muted" style="font-size:12.5px">${ghs(r.shortfall)} to go</div>` : ""}
+            </div>
+          </div>
+        </div>
+
+        <!-- buckets + trust -->
+        <div class="grid">
+          <div class="card shadow" style="padding:6px 20px 8px">
+            <div class="muted" style="font-size:12.5px; font-weight:600; margin:14px 0 2px">Your five funds</div>
+            ${bucketRows}
+          </div>
+          <div class="card shadow" style="padding:20px">
+            <div class="row" style="justify-content:space-between; align-items:flex-start; margin-bottom:6px">
+              <div>
+                <div class="muted" style="font-size:12.5px; font-weight:600">Housing trust score</div>
+                <div class="disp" style="font-size:30px; font-weight:800; line-height:1.1">${t.score}<span class="muted" style="font-size:15px; font-weight:600"> / 100</span></div>
+              </div>
+              <span class="pill" style="color:var(--s-green-fg); background:var(--s-green-bg)">${esc(t.band)}</span>
+            </div>
+            ${factorRows}
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow" style="padding:8px 8px 6px; margin-top:16px">
+        <div class="muted" style="font-size:12.5px; font-weight:600; padding:12px 10px 4px">Recent contributions</div>
+        <table>
+          <thead><tr><th>Fund</th><th>Method</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>${txnRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  bindLogout();
+}
+
+function bindLogout() {
+  const b = document.getElementById("logout");
+  if (b) b.onclick = () => { Token.clear(); set({ view: "signin", user: null, wallet: null, trust: null, readiness: null, txns: [] }); };
+}
+
+/* ============================================================ data loading */
+
+async function loadDashboard(knownUser) {
+  set({ view: "loading", error: null });
+  try {
+    const user = knownUser || (await Api.me());
+    if (user.role !== "tenant") { set({ view: "nontenant", user }); return; }
+
+    // pull the live slice in parallel
+    const [tenant, wallet, txns] = await Promise.all([Api.tenant(), Api.wallet(), Api.transactions()]);
+    set({
+      view: "dash",
+      user,
+      wallet,
+      readiness: wallet.readiness || tenant.readiness,
+      trust: tenant.trust,
+      txns,
+    });
+  } catch (e) {
+    if (e.kind === "auth") { set({ view: "signin", user: null }); return; }
+    // surface the failure on the sign-in screen so it's actionable
+    set({ view: "signin" });
+    requestAnimationFrame(() => {
+      const slot = document.getElementById("formErr");
+      if (slot) slot.innerHTML = `<div class="banner err" style="margin-bottom:14px"><span>${esc(e.message)}</span></div>`;
+    });
+  }
+}
+
+/* ============================================================ go */
+render();
+</script>
+</body>
+</html>
