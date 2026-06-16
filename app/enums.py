@@ -94,6 +94,12 @@ class LeaseStatus(str, Enum):
     pending = "pending"
 
 
+class BookingStatus(str, Enum):
+    pending = "pending"
+    confirmed = "confirmed"
+    cancelled = "cancelled"
+
+
 class PlanStatus(str, Enum):
     active = "active"
     paused = "paused"

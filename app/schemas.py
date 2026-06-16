@@ -5,7 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .enums import (
-    Bucket, Frequency, MaintenanceStatus, OccupancyStatus, Role, Urgency,
+    BookingStatus, Bucket, Frequency, MaintenanceStatus, OccupancyStatus, Role, Urgency,
     VerificationStatus,
 )
 
@@ -224,3 +224,59 @@ class RiskItemOut(BaseModel):
     level: str
     readiness_pct: float
     trust_score: int
+
+
+# ---- marketplace: hostel listings ----
+
+class ListingCreate(BaseModel):
+    name: str
+    university: Optional[str] = None
+    city: Optional[str] = None
+    area: Optional[str] = None
+    room_type: Optional[str] = None
+    price_per_bed: float = Field(ge=0)
+    total_beds: int = Field(ge=1)
+    available_beds: Optional[int] = None
+    amenities: list[str] = []
+    photos: list[str] = []
+    description: Optional[str] = None
+
+
+class ListingOut(BaseModel):
+    id: int
+    name: str
+    owner: Optional[str] = None
+    university: Optional[str] = None
+    city: Optional[str] = None
+    area: Optional[str] = None
+    room_type: Optional[str] = None
+    price_per_bed: Optional[float] = None
+    total_beds: Optional[int] = None
+    available_beds: Optional[int] = None
+    amenities: list[str] = []
+    photos: list[str] = []
+    description: Optional[str] = None
+
+
+# ---- marketplace: bookings ----
+
+class BookingCreate(BaseModel):
+    property_id: int
+    beds: int = Field(default=1, ge=1)
+    move_in_date: Optional[date] = None
+    note: Optional[str] = None
+
+
+class BookingStatusUpdate(BaseModel):
+    status: BookingStatus
+
+
+class BookingOut(BaseModel):
+    id: int
+    property_id: int
+    property_name: Optional[str] = None
+    university: Optional[str] = None
+    beds: int
+    move_in_date: Optional[date] = None
+    status: str
+    created_at: Optional[datetime] = None

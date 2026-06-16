@@ -17,7 +17,7 @@ from sqlalchemy.sql import func
 
 from .database import Base
 from .enums import (
-    DisputeStatus, Frequency, InspectionType, LeaseStatus, MaintenanceStatus,
+    BookingStatus, DisputeStatus, Frequency, InspectionType, LeaseStatus, MaintenanceStatus,
     OccupancyStatus, PaymentStatus, PlanStatus, RiskLevel, Role, TxnStatus,
     Urgency, VerificationStatus,
 )
@@ -93,6 +93,15 @@ class Property(Base):
     maintenance_rules = Column(Text)
     occupancy_status = Column(String(30), default=OccupancyStatus.vacant.value)
     health_score = Column(Integer, default=100)
+    # --- marketplace / hostel listing fields ---
+    listed = Column(Boolean, default=False, index=True)
+    photos = Column(JSON, default=list)
+    university = Column(String(160), index=True)
+    room_type = Column(String(60))        # e.g. "1-in-1", "2-in-1", "4-in-1"
+    price_per_bed = Column(Float)         # GHS per bed per academic year
+    total_beds = Column(Integer)
+    available_beds = Column(Integer)
+    description = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -302,4 +311,17 @@ class AuditLog(Base):
     entity = Column(String(80))
     entity_id = Column(Integer)
     detail = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Booking(Base):
+    __tablename__ = "bookings"
+
+    id = Column(Integer, primary_key=True)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    beds = Column(Integer, default=1)
+    move_in_date = Column(Date)
+    note = Column(Text)
+    status = Column(String(20), default=BookingStatus.pending.value)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
